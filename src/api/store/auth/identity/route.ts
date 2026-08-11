@@ -17,21 +17,27 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   try {
     const authModule = req.scope.resolve(Modules.AUTH)
-    const authIdentity = await authModule.retrieveAuthIdentity(authContext.auth_identity_id)
+    const authIdentity = await authModule.retrieveAuthIdentity(authContext.auth_identity_id, {
+      relations: ["provider_identities"],
+    })
 
     if (!authIdentity) {
       return res.status(404).json({ message: "Auth identity not found." })
     }
 
     const userMetadata = ((authIdentity as any)?.user_metadata as Record<string, any>) || {}
-    const email = userMetadata.email || null
+    const providerMetadata =
+      ((authIdentity as any)?.provider_identities?.[0]?.user_metadata as Record<string, any>) || {}
+
+    const email = userMetadata.email || providerMetadata.email || null
 
     if (!email) {
       return res.status(404).json({ message: "No verified email found for identity." })
     }
 
-    const firstName = userMetadata.given_name || userMetadata.name || "Customer"
-    const lastName = userMetadata.family_name || ""
+    const firstName =
+      userMetadata.given_name || userMetadata.name || providerMetadata.given_name || providerMetadata.name || "Customer"
+    const lastName = userMetadata.family_name || providerMetadata.family_name || ""
 
     // Return ONLY necessary fields, omitting tokens, secrets, or full metadata objects
     return res.status(200).json({
