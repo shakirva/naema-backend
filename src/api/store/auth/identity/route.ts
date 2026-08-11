@@ -14,7 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   let decoded: any
   try {
-    decoded = jwt.verify(token, jwtSecret)
+    decoded = jwt.verify(token, jwtSecret as string)
   } catch {
     return res.status(401).json({ message: "Invalid or expired token." })
   }
