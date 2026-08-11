@@ -1,23 +1,37 @@
-import { MedusaResponse, AuthenticatedMedusaRequest } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { Modules, ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import jwt from "jsonwebtoken"
 
-export const AUTHENTICATE = true
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Missing or invalid authorization header." })
+  }
 
-export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const authContext = req.auth_context
+  const token = authHeader.split(" ")[1]
+  const config = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE)
+  const jwtSecret = config.projectConfig.http.jwtSecret
 
-  if (!authContext?.auth_identity_id) {
-    return res.status(401).json({ message: "Unauthenticated" })
+  let decoded: any
+  try {
+    decoded = jwt.verify(token, jwtSecret)
+  } catch {
+    return res.status(401).json({ message: "Invalid or expired token." })
+  }
+
+  const authIdentityId = decoded?.auth_identity_id
+  if (!authIdentityId) {
+    return res.status(401).json({ message: "Invalid auth identity in token." })
   }
 
   // Reject if identity is already linked to a customer actor
-  if (authContext.actor_id) {
+  if (decoded?.actor_id) {
     return res.status(400).json({ message: "Identity is already linked to a customer profile." })
   }
 
   try {
     const authModule = req.scope.resolve(Modules.AUTH)
-    const authIdentity = await authModule.retrieveAuthIdentity(authContext.auth_identity_id, {
+    const authIdentity = await authModule.retrieveAuthIdentity(authIdentityId, {
       relations: ["provider_identities"],
     })
 
@@ -39,7 +53,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       userMetadata.given_name || userMetadata.name || providerMetadata.given_name || providerMetadata.name || "Customer"
     const lastName = userMetadata.family_name || providerMetadata.family_name || ""
 
-    // Return ONLY necessary fields, omitting tokens, secrets, or full metadata objects
     return res.status(200).json({
       email,
       first_name: firstName,
